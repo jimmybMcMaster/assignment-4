@@ -1,6 +1,8 @@
 import previous_assignment from './assignment-3'
 
 export type BookID = string
+export type ShelfId = string
+export type OrderId = string
 
 export interface Book {
   id?: BookID
@@ -19,10 +21,48 @@ export interface Filter {
   author?: string
 };
 
-// If multiple filters are provided, any book that matches at least one of them should be returned
-// Within a single filter, a book would need to match all the given conditions
+export interface BookStock {
+  bookId: BookID
+  shelf: ShelfId
+  count: number
+}
+
+export interface Warehouse {
+  stocks: BookStock[]
+}
+
+export interface Order {
+  orderId: OrderId
+  books: Record<BookID, number>
+  status: 'pending' | 'fulfilled'
+  createdAt: Date
+}
+
+// In memory storage
+const warehouse: Warehouse = {
+  stocks: []
+}
+
+const orders: Order[] = []
+let orderCounter = 1
+
+
+// Helper function to get total stock for a book across all shelves
+function getBookStock(bookId: BookID): number {
+  return warehouse.stocks
+    .filter(stock => stock.bookId === bookId)
+    .reduce((total, stock) => total + stock.count, 0)
+}
+
 async function listBooks (filters?: Filter[]): Promise<Book[]> {
-  throw new Error('Todo')
+   // Get books from previous assignment and add stock information
+  const books = await previous_assignment.listBooks(filters)
+  
+  return books.map((book: Book) => ({
+    ...book,
+    stock: (book.id != null) ? getBookStock(book.id) : 0
+  }))
+  
 }
 
 async function createOrUpdateBook (book: Book): Promise<BookID> {
@@ -36,9 +76,6 @@ async function removeBook (book: BookID): Promise<void> {
 async function lookupBookById (book: BookID): Promise<Book> {
   throw new Error('Todo')
 }
-
-export type ShelfId = string
-export type OrderId = string
 
 async function placeBooksOnShelf (bookId: BookID, numberOfBooks: number, shelf: ShelfId): Promise<void> {
   throw new Error('Todo')
