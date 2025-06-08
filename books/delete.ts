@@ -1,9 +1,17 @@
 import { z } from 'zod'
 import { type ZodRouter } from 'koa-zod-router'
-import { getBookDatabase } from '../database_access.js'
+import { getBookDatabase, type BookDatabaseAccessor } from '../database_access.js'
 import {  ObjectId } from 'mongodb'
 
-export default function deleteBook (router: ZodRouter): void {
+// Business logic
+async function deleteBook(id: string, database: BookDatabaseAccessor): Promise<boolean> {
+  const objectId = ObjectId.createFromHexString(id)
+  const result = await database.books.deleteOne({ _id: { $eq: objectId } })
+  return result.deletedCount === 1
+}
+
+// Route handler
+export default function deleteBookRoute(router: ZodRouter): void {
   router.register({
     name: 'delete a book',
     method: 'delete',
@@ -15,10 +23,11 @@ export default function deleteBook (router: ZodRouter): void {
     },
     handler: async (ctx, next) => {
       const id = ctx.request.params.id
-      const objectId = ObjectId.createFromHexString(id)
       const db = getBookDatabase()
-      const result = await db.books.deleteOne({ _id: { $eq: objectId } })
-      if (result.deletedCount === 1) {
+      
+      const wasDeleted = await deleteBook(id, db)
+      
+      if (wasDeleted) {
         ctx.body = {}
       } else {
         ctx.statusCode = 404

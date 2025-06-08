@@ -1,9 +1,42 @@
 import { z } from 'zod'
 import { type ZodRouter } from 'koa-zod-router'
-import { getBookDatabase } from '../database_access.js'
+import { getBookDatabase, type BookDatabaseAccessor } from '../database_access.js'
+import { type Book } from '../adapter/assignment-3.js'
 import { ObjectId } from 'mongodb'
 
-export default function createOrUpdateBook (router: ZodRouter): void {
+
+// Business logic
+async function createOrUpdateBook(bookData: Book, database: BookDatabaseAccessor): Promise<{ success: boolean, id?: string }> {
+  if (typeof bookData.id === 'string') {
+    // Update existing book
+    const id = bookData.id
+    const result = await database.books.replaceOne(
+      { _id: { $eq: ObjectId.createFromHexString(id) } }, 
+      {
+        id,
+        name: bookData.name,
+        description: bookData.description,
+        price: bookData.price,
+        author: bookData.author,
+        image: bookData.image
+      }
+    )
+    return { success: result.modifiedCount === 1, id }
+  } else {
+    // Create new book
+    const result = await database.books.insertOne({
+      name: bookData.name,
+      description: bookData.description,
+      price: bookData.price,
+      author: bookData.author,
+      image: bookData.image
+    })
+    return { success: true, id: result.insertedId.toString() }
+  }
+}
+
+// Route handler
+export default function createOrUpdateBookRoute(router: ZodRouter): void {
   router.register({
     name: 'create or update a book',
     method: 'post',
@@ -20,41 +53,20 @@ export default function createOrUpdateBook (router: ZodRouter): void {
     },
     handler: async (ctx, next) => {
       const body = ctx.request.body
-      const db = getBookDatabase() // Call the function to get the database accessor
+      const db = getBookDatabase()
 
-      if (typeof body.id === 'string') {
-        const id = body.id
-        try {
-          const result = await db.books.replaceOne({ _id: { $eq: ObjectId.createFromHexString(id) } }, {
-            id,
-            name: body.name,
-            description: body.description,
-            price: body.price,
-            author: body.author,
-            image: body.image
-          })
-          if (result.modifiedCount === 1) {
-            ctx.body = { id }
-          } else {
-            ctx.statusCode = 404
-          }
-        } catch (e) {
-          ctx.statusCode = 500
+      try {
+        const result = await createOrUpdateBook(body, db)
+        
+        if (result.success) {
+          ctx.body = { id: result.id }
+        } else {
+          ctx.statusCode = 404
         }
-      } else {
-        try {
-          const result = await db.books.insertOne({
-            name: body.name,
-            description: body.description,
-            price: body.price,
-            author: body.author,
-            image: body.image
-          })
-          ctx.body = { id: result.insertedId }
-        } catch (e) {
-          ctx.statusCode = 500
-        }
+      } catch (e) {
+        ctx.statusCode = 500
       }
+      
       await next()
     }
   })
