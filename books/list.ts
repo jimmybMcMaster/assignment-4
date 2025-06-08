@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { bookCollection } from '../database_access'
-import { type Book } from '../adapter/assignment-2'
+import { getBookDatabase } from '../database_access.js'
+import { type Book } from '../adapter/assignment-2.js'
 import { type ZodRouter } from 'koa-zod-router'
 
 export default function booksList (router: ZodRouter): void {
@@ -48,8 +48,8 @@ export default function booksList (router: ZodRouter): void {
             })
           }
         : {}
-
-      const bookList = await bookCollection.find(query).map(document => {
+        const db = getBookDatabase()  
+        const bookList = await db.books.find(query).map(document => {
         const book: Book = {
           id: document._id.toHexString(),
           name: document.name,

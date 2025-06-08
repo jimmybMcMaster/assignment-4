@@ -30,6 +30,7 @@
     "@types/koa-qs": "~2.0.3",
     "eslint": "^8",
     "eslint-config-love": "^52",
+    "mongodb-memory-server": "^10.1.4",
     "typescript": "^5",
     "vitest": "^3.2.2"
   }
