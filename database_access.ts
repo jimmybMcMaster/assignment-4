@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb'
 // We are importing the book type here, so we can keep our types consistent with the front end
-import { type Book } from './adapter/assignment-3'
+import { type Book } from './adapter/assignment-3.js'
 
 // This is the connection string for the mongo database in our docker compose file
 const uri = 'mongodb://mongo'
@@ -10,5 +10,3 @@ const uri = 'mongodb://mongo'
 export const client = new MongoClient(uri)
 export const database = client.db('mcmasterful-books')
 export const bookCollection = database.collection<Book>('books')
-
-//TEST PUSH
