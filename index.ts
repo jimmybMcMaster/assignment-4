@@ -2,9 +2,9 @@ import Koa from 'koa'
 import cors from '@koa/cors'
 import zodRouter from 'koa-zod-router'
 import qs from 'koa-qs'
-import booksList from './books/list'
-import createOrUpdateBook from './books/create_or_update'
-import deleteBook from './books/delete'
+import booksList from './books/list.js'
+import createOrUpdateBook from './books/create_or_update.js'
+import deleteBook from './books/delete.js'
 
 const app = new Koa()
 
