@@ -12,23 +12,19 @@ export interface Book {
   price: number
   image: string
   stock?: number
-};
+}
 
 export interface Filter {
   from?: number
   to?: number
   name?: string
   author?: string
-};
+}
 
 export interface BookStock {
   bookId: BookID
   shelf: ShelfId
   count: number
-}
-
-export interface Warehouse {
-  stocks: BookStock[]
 }
 
 export interface Order {
@@ -38,152 +34,129 @@ export interface Order {
   createdAt: Date
 }
 
-// In memory storage
-const warehouse: Warehouse = {
-  stocks: []
-}
-
-const orders: Order[] = []
-let orderCounter = 1
-
-
-// Helper function to get total stock for a book across all shelves
-function getBookStock(bookId: BookID): number {
-  return warehouse.stocks
-    .filter(stock => stock.bookId === bookId)
-    .reduce((total, stock) => total + stock.count, 0)
-}
-
-async function listBooks (filters?: Filter[]): Promise<Book[]> {
-   // Get books from previous assignment and add stock information
+async function listBooks(filters?: Filter[]): Promise<Book[]> {
   const books = await previous_assignment.listBooks(filters)
-  
-  return books.map((book: Book) => ({
-    ...book,
-    stock: (book.id != null) ? getBookStock(book.id) : 0
-  }))
-  
+
+  const booksWithStock = await Promise.all(
+    books.map(async (book: Book) => {
+      if (book.id != null) {
+        try {
+          const response = await fetch(`http://localhost:3000/warehouse/stock/${book.id}`)
+          if (!response.ok) throw new Error()
+          const stockData = await response.json()
+          return { ...book, stock: stockData.stock }
+        } catch {
+          return { ...book, stock: 0 }
+        }
+      }
+      return { ...book, stock: 0 }
+    })
+  )
+
+  return booksWithStock
 }
 
-async function createOrUpdateBook (book: Book): Promise<BookID> {
+async function createOrUpdateBook(book: Book): Promise<BookID> {
   return await previous_assignment.createOrUpdateBook(book)
 }
 
-async function removeBook (book: BookID): Promise<void> {
+async function removeBook(book: BookID): Promise<void> {
   await previous_assignment.removeBook(book)
 }
 
 async function lookupBookById(book: BookID): Promise<Book> {
   const allBooks = await previous_assignment.listBooks()
   const bookData = allBooks.find(b => b.id === book)
-  
+
   if (bookData == null) {
     throw new Error(`Book with ID ${book} not found`)
   }
-  
-  return {
-    ...bookData,
-    stock: getBookStock(book)
+
+  try {
+    const response = await fetch(`http://localhost:3000/warehouse/stock/${book}`)
+    if (!response.ok) throw new Error()
+    const stockData = await response.json()
+    return { ...bookData, stock: stockData.stock }
+  } catch {
+    return { ...bookData, stock: 0 }
   }
 }
 
 async function placeBooksOnShelf(bookId: BookID, numberOfBooks: number, shelf: ShelfId): Promise<void> {
-  // Validate that the book exists
   await lookupBookById(bookId)
-  
-  // Find existing stock on this shelf for book
-  const existingStock = warehouse.stocks.find(
-    stock => stock.bookId === bookId && stock.shelf === shelf
-  )
-  
-  if (existingStock != null) {
-    existingStock.count += numberOfBooks
-  } else {
-    warehouse.stocks.push({
-      bookId,
-      shelf,
-      count: numberOfBooks
-    })
+
+  const result = await fetch(`http://localhost:3000/warehouse/stock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookId, numberOfBooks, shelf })
+  })
+
+  if (!result.ok) {
+    throw new Error('Failed to place books on shelf')
   }
 }
 
 async function orderBooks(order: BookID[]): Promise<{ orderId: OrderId }> {
-  const orderId = `${orderCounter++}`
-  
-  // Count books in the order
   const bookCounts: Record<BookID, number> = {}
   for (const bookId of order) {
-  
     await lookupBookById(bookId)
-    
     bookCounts[bookId] = (bookCounts[bookId] ?? 0) + 1
   }
-  
-  // Create the order
-  const newOrder: Order = {
-    orderId,
-    books: bookCounts,
-    status: 'pending',
-    createdAt: new Date()
+
+  const result = await fetch(`http://localhost:3000/warehouse/orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ books: bookCounts })
+  })
+
+  if (!result.ok) {
+    throw new Error('Failed to place order')
   }
-  
-  orders.push(newOrder)
-  
-  return { orderId }
+
+  return await result.json()
 }
 
 async function findBookOnShelf(book: BookID): Promise<Array<{ shelf: ShelfId, count: number }>> {
   await lookupBookById(book)
-  
-  return warehouse.stocks
-    .filter(stock => stock.bookId === book && stock.count > 0)
-    .map(stock => ({
-      shelf: stock.shelf,
-      count: stock.count
-    }))
+
+  const result = await fetch(`http://localhost:3000/warehouse/books/${book}/shelves`)
+  if (!result.ok) {
+    throw new Error('Failed to find book on shelf')
+  }
+
+  return await result.json()
 }
 
 async function fulfillOrder(order: OrderId, booksFulfilled: Array<{ book: BookID, shelf: ShelfId, numberOfBooks: number }>): Promise<void> {
-  const orderToFulfill = orders.find(o => o.orderId === order)
-  if (orderToFulfill == null) {
-    throw new Error(`Order ${order} not found`)
+  const result = await fetch(`http://localhost:3000/warehouse/orders/${order}`)
+  if (!result.ok) {
+    throw new Error('Failed to retrieve order')
   }
-  
-  if (orderToFulfill.status === 'fulfilled') {
+
+  const orderData = await result.json()
+  if (orderData.status === 'fulfilled') {
     throw new Error(`Order ${order} is already fulfilled`)
   }
-  
-  // Validate stock available and deduct
-  for (const fulfillment of booksFulfilled) {
-    const { book: bookId, shelf, numberOfBooks } = fulfillment
-    
-    const stockIndex = warehouse.stocks.findIndex(
-      stock => stock.bookId === bookId && stock.shelf === shelf
-    )
-    
-    if (stockIndex === -1) {
-      throw new Error(`No stock found for book ${bookId} on shelf ${shelf}`)
-    }
-    
-    const stock = warehouse.stocks[stockIndex]
-    if (stock.count < numberOfBooks) {
-      throw new Error(`Not enough stock for book ${bookId} on shelf ${shelf}. Available: ${stock.count}, requested: ${numberOfBooks}`)
-    }
-    
-    stock.count -= numberOfBooks
+
+  const fulfillResult = await fetch(`http://localhost:3000/warehouse/orders/${order}/fulfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fulfillments: booksFulfilled })
+  })
+
+  if (!fulfillResult.ok) {
+    throw new Error('Failed to fulfill order')
   }
-  
-  orderToFulfill.status = 'fulfilled'
 }
 
 async function listOrders(): Promise<Array<{ orderId: OrderId, books: Record<BookID, number> }>> {
-  return orders
-    .filter(order => order.status === 'pending')
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    .map(order => ({
-      orderId: order.orderId,
-      books: order.books
-    }))
+  const result = await fetch(`http://localhost:3000/warehouse/orders/pending`)
+
+  if (!result.ok) {
+    throw new Error('Failed to list orders')
+  }
+
+  return await result.json()
 }
 
 const assignment = 'assignment-4'
